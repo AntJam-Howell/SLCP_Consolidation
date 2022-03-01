@@ -1,0 +1,1073 @@
+################
+## Assemble Data and Variable Development
+################
+
+rm(list=ls())
+gc()
+#Libraries
+library(stargazer)
+library(plm)
+library(plyr)
+library(gridExtra)
+library(grid)
+#library(lmtest)
+library(did)
+library(ggpubr)
+library(tidyverse)
+library(starbility)
+library(lfe)
+library(texreg)
+library(sandwich)
+library(kableExtra)
+library(DescTools) #winsorize
+library(ggstatsplot)
+library(foreign)
+library(sf)
+library(maptools)
+library(rgeos)
+
+
+MSrural<-read.dta("~/Dropbox/Data/Minority Data/Survey data 2011/Rural Stata database/sample weights/RuralWeightsUse.dta")
+
+length(unique(MSrural$vill))
+length(unique(MSrural$qumn))
+##Get Ethnic households 
+HHEthnicity<-read.dta("~/Dropbox/Data/Minority Data/Survey data 2011/Questionnaires of 2011 data/Ethnicity and minority family category/Rural ethnicity and Minority family category.dta")
+MSrural <- merge(MSrural,HHEthnicity, by.all=c("qumn","code"), all.x=TRUE)
+MSrural<-MSrural[order(MSrural$qumn),]
+head(MSrural[,c("qumn","b4","b5","b6")],100)
+
+#MajMin Information
+MSrural$MajMin <- ifelse(MSrural$ma8==1,1,0)
+summary(MSrural$MajMinD)
+MSrural$MajMin<-factor(MSrural$MajMin,levels=c(1,0))
+summary(MSrural$MajMin)
+MSrural$ethnicGrp <-ifelse(MSrural$ma8==1,1,
+                           ifelse(MSrural$ma8==3,3,
+                                  ifelse(MSrural$ma8==4,4,
+                                         ifelse(MSrural$ma8==5,5,
+                                                ifelse(MSrural$ma8==6,6,
+                                                       ifelse(MSrural$ma8==12,7,
+                                                              ifelse(MSrural$ma8==8,8,9)))))))
+
+MSrural$prov<-substr(MSrural$coun,0,2)
+
+## Household outcomes
+
+
+##Self-Employed Work
+MSrural$SelfEmp <- ifelse(MSrural$b5==1,1,
+                          ifelse(MSrural$b5 ==2,0,MSrural$b5))
+
+MSrural$SelfEmpYr<-MSrural$b12_1
+MSrural$SelfEmpYr<-ifelse(is.na(MSrural$SelfEmpYr) & MSrural$SelfEmp==0,0,MSrural$SelfEmpYr)
+
+
+##Migration
+MSrural$migrant <- ifelse(MSrural$b6==1,1,
+                          ifelse(MSrural$b6 ==2,0,MSrural$b6))
+MSrural$migrant<-ifelse(MSrural$migrant ==1 & MSrural$a5<15 | MSrural$a5>65,0,MSrural$migrant)
+
+MSrural$MigrateYr<-MSrural$b13_1
+MSrural$MigrateYr<-ifelse(is.na(MSrural$MigrateYr) & MSrural$migrant==0,0,MSrural$MigrateYr)
+
+detach("package:plyr", unload = TRUE)
+MSruralHH<-MSrural %>% 
+  group_by(qumn) %>% 
+  summarise(
+    qumn1=first(qumn1),
+    ageHOH11=first(age),
+    ageHOH10=first(age-1),
+    ageHOH09=first(age-2),
+    ageHOH08=first(age-3),
+    ageHOH07=first(age-4),
+    ageHOH06=first(age-5),
+    
+    HHsizeEveryone=length(qumn),
+    HHsize11=length((qumn[age11>16 & age11<60])),
+    HHsize10=length((qumn[age10>16 & age10<60])),
+    HHsize09=length((qumn[age9>16 & age9<60])),
+    HHsize08=length((qumn[age8>16 & age8<60])),
+    HHsize07=length((qumn[age7>16 & age7<60])),
+    HHsize06=length((qumn[age6>16 & age6<60])),
+    
+    HHDep11=length((qumn[age11<16 | age11>60]))/length(qumn),
+    HHDep10=length((qumn[age10<16 | age10>60]))/length(qumn),
+    HHDep09=length((qumn[age9<16 | age9>60]))/length(qumn),
+    HHDep08=length((qumn[age8<16 | age8>60]))/length(qumn),
+    HHDep07=length((qumn[age7<16 | age7>60]))/length(qumn),
+    HHDep06=length((qumn[age6<16 | age6>60]))/length(qumn),
+    
+    
+    
+    ethnicGrp=first(ethnicGrp),
+    WageWorkNo = sum(WageWork,na.rm=TRUE),
+    NonFarmWageEmpYr = min(NonFarmWageEmpYr,na.rm=TRUE),
+    SelfEmpNo = sum(SelfEmp,na.rm=TRUE),
+    SelfEmpYr = min(SelfEmpYr,na.rm=TRUE),
+    migrantNo=sum(migrant,na.rm=TRUE),
+    MigrateYr = min(MigrateYr,na.rm=TRUE) ) %>%
+  mutate(NonFarmWageEmpYr = ifelse(is.infinite(NonFarmWageEmpYr), NA, NonFarmWageEmpYr),
+         SelfEmpYr = ifelse(is.infinite(SelfEmpYr), NA, SelfEmpYr),
+         MigrateYr = ifelse(is.infinite(MigrateYr), NA, MigrateYr),
+         WageWorkNoD=ifelse(WageWorkNo>0,1,0),
+         SelfEmpD=ifelse(SelfEmpNo>0,1,0),
+         migrantD=ifelse(migrantNo>0,1,0)
+  ) 
+
+
+
+## Convert from Wide to Long Panel Data
+
+testDF <- MSruralHH %>% 
+  gather(Year, SelfEmpYr, SelfEmpYr06D:SelfEmpYr11D) %>% 
+  select(qumn, Year, SelfEmpYr)
+testDF$Year<-as.numeric(unlist(substr(testDF$Year,10,11)))
+
+testDF2 <- MSruralHH %>% 
+  gather(Year, NonFarmWageEmpYr, NonFarmWageEmpYr06D:NonFarmWageEmpYr11D) %>% 
+  select(qumn, Year, NonFarmWageEmpYr)
+testDF2$Year<-as.numeric(unlist(substr(testDF2$Year,17,18)))
+
+
+testDF3 <- MSruralHH %>% 
+  gather(Year, MigrateYr, MigrateYr06D:MigrateYr11D) %>% 
+  select(qumn, Year, MigrateYr)
+testDF3$Year<-as.numeric(unlist(substr(testDF3$Year,10,11)))
+
+testDF4 <- MSruralHH %>% 
+  gather(Year, HHsize, HHsize06:HHsize11) %>% 
+  select(qumn, Year, HHsize)
+testDF4$Year<-as.numeric(unlist(substr(testDF4$Year,7,8)))
+
+testDF5 <- MSruralHH %>% 
+  gather(Year, HHDep, HHDep06:HHDep11) %>% 
+  select(qumn, Year, HHDep)
+testDF5$Year<-as.numeric(unlist(substr(testDF5$Year,6,7)))
+
+testDF6 <- MSruralHH %>% 
+  gather(Year, ageHOH, ageHOH06:ageHOH11) %>% 
+  select(qumn, Year, ageHOH)
+testDF6$Year<-as.numeric(unlist(substr(testDF6$Year,7,8)))
+
+
+testDF<-
+  merge(merge(merge(merge(merge(testDF,testDF2,by.all=c("qumn","Year")),testDF3, by.all=c("qumn","Year")),testDF4, by.all=c("qumn","Year")),testDF5, by.all=c("qumn","Year")),testDF6, by.all=c("qumn","Year"))
+
+testDF<-testDF[order(testDF$qumn,testDF$Year),]
+head(testDF)
+
+testDF<-testDF %>% mutate(Year=recode_factor(factor(as.character(Year)), 
+                                             `6`="2006", `7`="2007", `8`="2008",`9`="2009",`10`="2010",`11`="2011"))
+
+MSruralHH<-MSruralHH[,c("qumn","qumn1","ethnicGrp","WageWorkNoD", "SelfEmpD","migrantD","NonFarmWageEmpYr","SelfEmpYr","MigrateYr")]
+colnames(MSruralHH)<-c("qumn","qumn1","ethnicGrp","WageWorkNoD", "SelfEmpD","migrantD","NonFarmWageEmpYrInitial","SelfEmpYrInitial","MigrateYrInitial")
+
+
+HHPanelDF<-merge(testDF,MSruralHH,by.all="qumn")
+HHPanelDF$Year<-as.numeric(as.character(HHPanelDF$Year))
+
+
+####### Vilage Outcome Variables
+
+## Per capita Income
+MSrural$pcIncome2011<-MSrural$v1501
+MSrural$pcIncome2010<-MSrural$v1508
+MSrural$pcIncome2009<-MSrural$v1509
+MSrural$pcIncome2008<-MSrural$v1510
+MSrural$pcIncome2007<-MSrural$v1511
+
+
+##Natural Disaster Dummy
+
+MSrural$NatDis11<-ifelse(MSrural$v1601 ==1, 1,0)
+MSrural$NatDis11<-ifelse(is.na(MSrural$NatDis11),0,MSrural$NatDis11)
+
+MSrural$NatDis10<-ifelse(MSrural$v1611  ==1, 1,0)
+MSrural$NatDis10<-ifelse(is.na(MSrural$NatDis10),0,MSrural$NatDis10)
+
+MSrural$NatDis09<-ifelse(MSrural$v1621 ==1, 1,0)
+MSrural$NatDis09<-ifelse(is.na(MSrural$NatDis09),0,MSrural$NatDis09)
+
+MSrural$NatDis08<-ifelse(MSrural$v1631 ==1, 1,0)
+MSrural$NatDis08<-ifelse(is.na(MSrural$NatDis08),0,MSrural$NatDis08)
+
+MSrural$NatDis07<-ifelse(MSrural$v1641 ==1, 1,0)
+MSrural$NatDis07<-ifelse(is.na(MSrural$NatDis07),0,MSrural$NatDis07)
+
+
+## Treatment 
+
+##Define 2011 program existence
+MSrural$ProgExists11 <- MSrural$v2501
+MSrural$ProgExists11<-ifelse(MSrural$ProgExists11==1,1,0)
+
+##Define Start Date
+MSrural$ProgStart <- MSrural$v2502
+MSrural$ProgStart<-as.numeric(MSrural$ProgStart)
+
+##Clean Treatment Information
+MSrural$ProgExists11<-ifelse(is.na(MSrural$ProgExists11),0,MSrural$ProgExists11)
+
+MSrural$ProgExists11<-ifelse(MSrural$ProgExists11==0 & !is.na(MSrural$ProgStart),1,MSrural$ProgExists11)
+
+##Clean Treatment Timing Information
+MSrural$ProgStart<-ifelse(is.na(MSrural$ProgStart) & MSrural$ProgExists11==1,0,MSrural$ProgStart)
+#Convert Non-sensical 1990s start date to 2000s
+MSrural$ProgStart<-ifelse(MSrural$ProgStart>0 & MSrural$ProgStart<2000,2004,MSrural$ProgStart)
+#Sensor 2004> who do not reduce subsidies to 2004
+MSrural$ProgStart<-ifelse(MSrural$ProgStart>2004,2004,MSrural$ProgStart)
+summary(MSrural$ProgStart)
+
+
+MSrural<-MSrural %>%
+  select(qumn1,prov,ProgStart) %>%
+  filter(ProgStart==0, prov==45 | prov==43) %>%
+  mutate(yearEst=sample(2001:2002, 351, replace=TRUE)) %>% 
+  select(qumn1,yearEst)%>% distinct(qumn1, .keep_all = TRUE) %>% full_join(MSrural)
+MSrural$yearEst<-ifelse(is.na(MSrural$yearEst),MSrural$ProgStart,MSrural$yearEst)
+
+MSrural<-MSrural %>%
+  select(qumn1,prov,ProgStart) %>%
+  filter(ProgStart==0, prov==15 | prov==52 | prov==63 | prov==64 | prov==65) %>%
+  mutate(yearEst2=sample(2001:2003, 8762, replace=TRUE)) %>% 
+  select(qumn1,yearEst2) %>% distinct(qumn1, .keep_all = TRUE) %>% full_join(MSrural)
+MSrural$yearEst2<-ifelse(is.na(MSrural$yearEst2),MSrural$ProgStart,MSrural$yearEst2)
+
+MSrural$ProgStart <- ifelse(MSrural$ProgStart==0 & MSrural$prov=="45" | MSrural$prov=="43", MSrural$yearEst,MSrural$ProgStart)
+
+MSrural$ProgStart <-ifelse(MSrural$ProgStart==0 & MSrural$prov=="15" | MSrural$prov=="52" |MSrural$prov=="63" |
+                             MSrural$prov=="64"|MSrural$prov=="65", MSrural$yearEst2, MSrural$ProgStart)
+
+### Define Treatment 
+MSrural$TreatSubs<-MSrural$ProgExists11
+MSrural$TreatSubs<-ifelse(MSrural$ProgExists11==0,NA,MSrural$TreatSubs)
+MSrural$TreatSubs<-ifelse(MSrural$ProgStart==2004,0,MSrural$TreatSubs)
+MSrural$TreatSubsTiming<-MSrural$ProgStart + 8
+MSrural$TreatSubsTiming<-ifelse(MSrural$TreatSubsTiming==2012,0,MSrural$TreatSubsTiming)
+
+### Treatment Intensity
+
+##Household Subsidy Amount
+MSrural$SubsidyHH <- MSrural$n7_4
+MSrural$SubsidyHH<-ifelse(is.na(MSrural$SubsidyHH),0,MSrural$SubsidyHH)
+##Village Subsidy Amount
+MSrural$SubsidyPerMu <- MSrural$v2506
+MSrural$SubsidyPerMu<-ifelse(is.na(MSrural$SubsidyPerMu),0,MSrural$SubsidyPerMu)
+
+####AMOUNT OF RECLAIMED LAND
+MSrural$TotalAcreClaimed <- MSrural$v2504
+MSrural$ReclaimedLand11Mu<-MSrural$v2505
+
+MSrural$TotalAcreClaimed<-ifelse(MSrural$TotalAcreClaimed==0,1,MSrural$TotalAcreClaimed)
+MSrural$TotalAcreClaimed<-ifelse(is.na(MSrural$TotalAcreClaimed),0,MSrural$TotalAcreClaimed)
+
+MSrural$Duration <- 1 + 2011-MSrural$ProgStart
+
+MSrural$AvgAcreCLaimed<-MSrural$TotalAcreClaimed/MSrural$Duration
+
+
+##Village heterogenity
+
+MSrural$LandRightsExist <- MSrural$v2401
+MSrural$LandRightsExist<-ifelse(MSrural$LandRightsExist==1,1,0)
+
+MSrural$SkillTrainD <- MSrural$v2507
+MSrural$SkillTrainD<-ifelse(MSrural$SkillTrainD==2,0,MSrural$SkillTrainD)
+
+
+## Other Village Variables
+
+
+MSrural$ParticSkillTrain <- MSrural$v2509
+
+MSrural$MinDist<-MSrural$t104
+MSrural$MinDist<-ifelse(MSrural$MinDist==1,1,0)
+
+MSrural$arableLandPC<-MSrural$t116/MSrural$t122
+
+MSrural$VillHH<-MSrural$t122
+
+MSrural$CCPBase<-MSrural$t102
+MSrural$CCPBase<-ifelse(MSrural$CCPBase==1,1,0)
+
+##Largest Group 
+MSrural$LargestEthnicGroup<-MSrural$v1101
+MSrural$LargestEthnicGroup<-ifelse(MSrural$LargestEthnicGroup==1,0,1) #Minority=1; Han=0
+
+##Largest Group Population
+MSrural$LargestGroupPopulation<-MSrural$v1111
+
+##Largest Group Participation
+MSrural$LargestGroupParticipate<-MSrural$v1207
+
+##Largest Group Participation INtensity
+MSrural$LargestEthnicGroupParticipateIntensity<-abs(MSrural$v1207/MSrural$v1111)
+MSrural$LargestEthnicGroupParticipateIntensity<-ifelse(MSrural$LargestEthnicGroupParticipateIntensity>1,MSrural$LargestEthnicGroupParticipateIntensity-1,MSrural$LargestEthnicGroupParticipateIntensity)
+
+
+
+## Convert from Wide to Long Panel Data
+
+
+#### Create Panel Data
+library(tidyverse)
+testDF <- MSrural %>% 
+  gather(Year, PcIncome, pcIncome2007:pcIncome2010) %>% 
+  select(qumn1, Year, PcIncome)
+testDF$Year<-as.numeric(unlist(substr(testDF$Year,9,12)))
+
+testDF2 <- MSrural %>% 
+  gather(Year, LabWages, LabWages07:LabWages10) %>% 
+  select(vill, Year, LabWages)
+testDF2$Year<-as.numeric(unlist(substr(testDF2$Year,9,10)))
+testDF2<-testDF2[!is.na(testDF2$Year),]
+
+testDF3 <- MSrural %>% 
+  gather(Year3, NatDis, NatDis07:NatDis11)%>% 
+  select(vill, Year3, NatDis)
+testDF3$Year3<-as.numeric(unlist(substr(testDF3$Year3,7,8)))
+#testDF3$NatDis<-ifelse(is.na(testDF3$NatDis),0,testDF3$NatDis)
+
+testDF9 <- MSrural %>% 
+  gather(Year,NatDisFrew, NatDisFrew07:NatDisFrew11) %>% 
+  select(vill, Year,  NatDisFrew)
+testDF9$Year<-as.numeric(unlist(substr(testDF9$Year,11,12)))
+
+testDF10 <- MSrural %>% 
+  gather(Year,NatDisIntensity, NatDisIntensity07:NatDisIntensity11) %>% 
+  select(vill, Year,  NatDisIntensity)
+testDF10$Year<-as.numeric(unlist(substr(testDF10$Year,16,17)))
+
+testDF4 <- MSrural %>% 
+  gather(Year4, PartySecAge, PartySecYearsInOffice07:PartySecYearsInOffice11)%>% 
+  select(vill, Year4, PartySecAge)
+testDF4$Year4<-as.numeric(unlist(substr(testDF4$Year4,22,23)))
+
+testDF5 <- MSrural %>% 
+  gather(Year5, PubInv, PublicInvestments07:PublicInvestments11)%>% 
+  select(vill, Year5, PubInv)
+testDF5$Year5<-as.numeric(unlist(substr(testDF5$Year5,18,19)))
+
+testDF6 <- MSrural %>% 
+  gather(Year6, AgrServices, AgrServices07:AgrServices11)%>% 
+  select(vill, Year6, AgrServices)
+testDF6$Year6<-as.numeric(unlist(substr(testDF6$Year6,12,13)))
+#testDF6$AgrServices<-ifelse(is.na(testDF6$AgrServices),0,testDF6$AgrServices)
+testDF6<-testDF6[!is.na(testDF6$Year),]
+
+
+testDF7 <- MSrural %>% 
+  gather(Year7, LandRight, LandRight07:LandRight11)%>% 
+  select(vill, Year7, LandRight)
+testDF7$Year7<-as.numeric(unlist(substr(testDF7$Year7,10,11)))
+
+
+testDF8 <- MSrural %>% 
+  gather(Year,ReclaimedLand, ReclaimedLand07:ReclaimedLand11) %>% 
+  select(vill, Year,  ReclaimedLand)
+testDF8$Year<-as.numeric(unlist(substr(testDF8$Year,14,15)))
+
+
+testDF18 <- MSrural %>% 
+  gather(Year,ExpPubHealth, ExpPubHealth07:ExpPubHealth11) %>% 
+  select(vill, Year,  ExpPubHealth)
+testDF18$Year<-as.numeric(unlist(substr(testDF18$Year,13,14)))
+testDF18<-testDF18[!is.na(testDF18$Year),]
+
+testDF19 <- MSrural %>% 
+  gather(Year,ExpEduc, ExpEduc07:ExpEduc11) %>% 
+  select(vill, Year,  ExpEduc)
+testDF19$Year<-as.numeric(unlist(substr(testDF19$Year,8,9)))
+testDF19<-testDF19[!is.na(testDF19$Year),]
+
+testDF20 <- MSrural %>% 
+  gather(Year,ExpRoadConst, ExpRoadConst07:ExpRoadConst11) %>% 
+  select(vill, Year,  ExpRoadConst)
+testDF20$Year<-as.numeric(unlist(substr(testDF20$Year,13,14)))
+testDF20<-testDF20[!is.na(testDF20$Year),]
+
+testDF21 <- MSrural %>% 
+  gather(Year,ExpIrrigation, ExpIrrigation07:ExpIrrigation11) %>% 
+  select(vill, Year,  ExpIrrigation)
+testDF21$Year<-as.numeric(unlist(substr(testDF21$Year,15,16)))
+testDF21<-testDF21[!is.na(testDF21$Year),]
+
+testDF22 <- MSrural %>% 
+  gather(Year,ExpAgrServices, ExpAgrServices07:ExpAgrServices11) %>% 
+  select(vill, Year,  ExpAgrServices)
+testDF22$Year<-as.numeric(unlist(substr(testDF22$Year,15,16)))
+testDF22<-testDF22[!is.na(testDF22$Year),]
+
+
+VillPanelDF<-cbind(testDF,'LabWages'=testDF2[,3], 'NatDis'=testDF3[,3],
+                   'PartySecAge'=testDF4[,3],'PubInv'=testDF5[,3],'AgrServ'=testDF6[,3],
+                   'LandRight'=testDF7[,3],'ReclaimedLand'=testDF8[,3],
+                   'NatDisFrew'=testDF9[,3], 'NatDisIntensity'=testDF10[,3], 
+                   'ExpPubHealth'=testDF18[,3],'ExpEduc'=testDF19[,3],'ExpRoadConst'=testDF20[,3],'ExpIrrigation'=testDF21[,3],'ExpAgrServices'=testDF22[,3]
+)
+
+VillPanelDF$ReclaimedLand<-ifelse(is.na(VillPanelDF$ReclaimedLand),0,VillPanelDF$ReclaimedLand)
+
+VillPanelDF<-VillPanelDF %>% mutate(Year=recode_factor(factor(as.character(Year)), 
+                                                       `7`="2007", `8`="2008",`9`="2009",`10`="2010",`11`="2011"))
+VillPanelDF$Year<-as.numeric(as.character(VillPanelDF$Year))
+
+
+####  Merge Panels
+HHPanelDF<-full_join(HHPanelDF,VillPanelDF)
+summary(HHPanelDF)
+
+####Subest MSrural
+DF<-MSrural %>% select(qumn,qumn1,coun,prov,ProgExists11,ProgStart,TreatSubs,TreatSubsTiming,TreatProgStop,TreatProgStopTiming,SubsidyPerMu,SubsidyHH,MajMin,ethnicGrp,SkillTrainD,ParticSkillTrain,VillHH,CCPBase,
+                       LargestEthnicGroup,LargestGroupParticipate,LargestEthnicGroupParticipateIntensity,)
+
+#### Merge Panel Data with cross-section MSrural
+DFP<-full_join(HHPanelDF,DF) 
+DFP<-DFP[order(DFP$qumn,DFP$Year),]
+DFP<-DFP[!duplicated(DFP[c("qumn","Year")]),]
+##Remove villages that never had SLCP
+DFP<-DFP[!is.na(DFP$TreatSubs),]
+
+rm(list=setdiff(ls(), "DFP"))
+gc()
+
+### Variable Transformations
+
+#Income
+DFP<-DFP[!is.na(DFP$PcIncome),]
+DFP$PcIncomeW<-Winsorize(DFP$PcIncome, minval = NULL, maxval = NULL,na.rm=TRUE)
+DFP$PcIncomeL<-log(DFP$PcIncome)
+DFP$PcIncomeWL<-log(DFP$PcIncomeW)
+
+
+###Get time-varying treatment
+DFP$TreatSubsTimingD<-ifelse(DFP$TreatSubsTiming<= DFP$Year & DFP$TreatSubsTiming!=0,1,0)
+DFP$TreatProgStopTimingD<-ifelse(DFP$TreatProgStopTiming<= DFP$Year  & DFP$TreatProgStopTiming!=0,1,0)
+DFP$TreatBothTimingD<-ifelse(DFP$TreatSubsTimingD ==1 & DFP$TreatProgStopTimingD==1,1,0)
+
+DFP$TreatProgStopD<-DFP$TreatProgStopTimingD
+DFP$TreatProgStopD<-ifelse(DFP$TreatProgStopD==1,0,
+                           ifelse(DFP$TreatProgStopD==0,1,NA))
+
+DFP$TreatProgSubsD<-DFP$TreatSubsTimingD
+DFP$TreatProgSubsD<-ifelse(DFP$TreatProgSubsD==1,0,
+                           ifelse(DFP$TreatProgSubsD==0,1,NA))
+
+## Remove treated prior to 2009
+DFP<-DFP[DFP$TreatSubsTiming!=2008,]
+DFP<-DFP[DFP$TreatProgStopTiming!=2008,]
+DFP<-DFP[!is.na(DFP$Year),]
+
+## intensity
+DFP$ReclaimedLandIntensity<-DFP$SubsidyPerMu/(DFP$ReclaimedLand+1)
+DFP$ReclaimedLandIntensityD<-ifelse(DFP$ReclaimedLandIntensity>median(DFP$ReclaimedLandIntensity,na.rm=TRUE),1,0)
+
+DFP$ReclaimedLandD<-ifelse(DFP$ReclaimedLand>median(DFP$ReclaimedLand,na.rm=TRUE),1,0)
+DFP$ParticipationD<-ifelse(DFP$LargestEthnicGroupParticipateIntensity>median(DFP$LargestEthnicGroupParticipateIntensity,na.rm=TRUE),1,0)
+DFP$SubsidyPerMuD<-ifelse(DFP$SubsidyPerMu>median(DFP$SubsidyPerMu,na.rm=TRUE),1,0)
+
+DFP$time<-as.numeric(as.character(DFP$Year))
+DFP$prov<-as.numeric(as.character(DFP$prov))
+DFP$Trend<-DFP$prov*DFP$time
+
+###############
+
+##########################################################################################
+## Map Figure 1
+##########################################################################################
+
+DFP<-DFP[!is.na(DFP$Year),]
+DFPV<-DFP[order(DFP$qumn1,DFP$Year),]
+DFPV<-DFPV[!duplicated(DFPV[c("qumn1","Year")]),]
+DFPV$cityid<-substr(DFPV$coun,0,4)
+
+DFPV<-DFPV %>% select(qumn1,Year,cityid,prov,TreatSubsTiming,TreatProgStopTiming)
+
+
+
+###Load Original city map Data and merge
+load("~/Dropbox/Dissertation/shape-File_r_code/USE-ggplot2-shapeFile.RData")
+map_and_data$provid <- substring(map_and_data$cityid,1,2)
+regSurv$provid <- substring(regSurv$cityid,1,2)
+regDF<-full_join(DFPV,regSurv)
+
+map_and_data <- full_join(map_and_data, regDF)
+map_and_data<-map_and_data[order(map_and_data$cityid),]
+
+coords<-map_and_data[!duplicated(map_and_data[c("cityid")]) & map_and_data$cityid %in% regDF$cityid,]
+coords<-na.omit(coords)
+
+c_opts <- theme(axis.text.x=element_blank(), 
+                axis.text.y=element_blank(), 
+                axis.title.x=element_blank(), 
+                axis.title.y=element_blank(), 
+                axis.ticks = element_blank(),
+                legend.text=element_text(size=10), 
+                legend.background=element_blank(), 
+                legend.key.size = unit(.3, "cm"),
+                legend.key=element_rect(fill='transparent', colour=NA), 
+                panel.grid.major=element_line(colour=NA), 
+                panel.background=element_rect(fill='transparent', colour=NA), 
+                panel.grid.minor = element_blank(), 
+                #panel.border =      theme_rect(fill = NA, colour='black'), 
+                legend.direction = "vertical", 
+                legend.box = "horizontal",
+                legend.position=c(.25,.2),
+                legend.title=element_text(size=10, face='bold')
+)
+
+VillNu<-table(map_and_data$TreatSubsTiming[!duplicated(map_and_data$qumn1)])
+
+set.seed(2)
+points<-map_and_data %>%
+  filter(!is.na(TreatSubsTiming)) %>%
+  group_by(TreatSubsTiming) %>% 
+  nest() %>%            
+  ungroup() %>% 
+  mutate(n =VillNu ) %>% 
+  mutate(samp = map2(data, n, sample_n,replace = TRUE)) %>% 
+  select(-data) %>%
+  unnest(samp) %>%
+  arrange((TreatSubsTiming)) %>%
+  as.data.frame() 
+
+points<-points %>% 
+  mutate(LongNew= (long + Long)/2, 
+         LatNew = (lat + Lat)/2)
+
+dotDensDF<-full_join(points,coords)
+
+##Create treatment 
+points$Treat08<-ifelse(points$TreatSubsTiming=="2008",1,0)
+points$Treat09<-ifelse(points$TreatSubsTiming=="2009" | points$Treat08==1,1,0)
+points$Treat10<-ifelse(points$TreatSubsTiming=="2010" | points$Treat08==1 | points$Treat09==1,1,0)
+points$Treat11<-ifelse(points$TreatSubsTiming=="2011" | points$Treat10==1 | points$Treat09==1 | points$Treat08==1,1,0)
+
+
+#Maps
+
+Map09<-ggplot()  +
+  geom_polygon(aes(long, lat, group=group),
+               data=map_and_data, col="grey50" ,fill="white")  +
+  geom_point(aes(LongNew,LatNew,
+                 size=factor(Treat09), color=factor(Treat09),shape=factor(Treat09),
+                 fill=factor(Treat09), alpha=factor(Treat09)),
+             inherit.aes = TRUE,points) +
+  scale_size_manual(name="",
+                    values=c(1,2)) +
+  scale_alpha_manual(name="",
+                     values=c(.3,.6)) +
+  scale_color_manual(name="Treatment Status",
+                     values=c('blue','red'),
+                     labels=c("Not Yet Treated","Treated")) + 
+  scale_shape_manual(name="",
+                     values=c(19,17),
+                     labels=c("Not Yet Treated","Treated"))+
+  guides(size = FALSE, alpha=FALSE, fill=FALSE) + 
+  c_opts + theme(legend.position="none")
+
+
+Map10<-ggplot()  +
+  geom_polygon(aes(long, lat, group=group),
+               data=map_and_data, col="grey50" ,fill="white")  +
+  geom_point(aes(LongNew,LatNew,
+                 size=factor(Treat10), color=factor(Treat10),shape=factor(Treat10),
+                 fill=factor(Treat10), alpha=factor(Treat10)),
+             inherit.aes = TRUE,points) +
+  scale_size_manual(name="",
+                    values=c(1,2)) +
+  scale_alpha_manual(name="",
+                     values=c(.5,.5)) +
+  scale_shape_manual(name="",
+                     values=c(19,17),
+                     labels=c("Not Yet Treated","Treated"))+
+  scale_color_manual(name="",
+                     values=c('blue','red'),
+                     labels=c("Not Yet Treated","Treated")) + 
+  guides(size = FALSE, alpha=FALSE, fill=FALSE) + 
+  c_opts + theme(legend.position=c(.25,.1))
+
+
+Map11<-ggplot()  +
+  geom_polygon(aes(long, lat, group=group),
+               data=map_and_data, col="grey50" ,fill="white")  +
+  geom_point(aes(LongNew,LatNew,
+                 size=factor(Treat11), color=factor(Treat11),shape=factor(Treat11),
+                 fill=factor(Treat11), alpha=factor(Treat11)),
+             inherit.aes = TRUE,points) +
+  scale_size_manual(name="",
+                    values=c(1,2)) +
+  scale_alpha_manual(name="",
+                     values=c(.7,.3)) +
+  scale_color_manual(name="Treatment Status",
+                     values=c('blue','red'),
+                     labels=c("Not Yet Treated","Treated")) + 
+  scale_shape_manual(name="",
+                     values=c(19,17),
+                     labels=c("Not Yet Treated","Treated"))+
+  guides(size = FALSE, alpha=FALSE, fill=FALSE) + 
+  c_opts + theme(legend.position="none")
+
+###############
+
+################################
+### Baseline model and Specification Tests - Figure 2
+################################
+
+##Include Controls in every estimation
+base_controls = c(
+  'Year FE' = 'Year',
+  'Village FE' = 'qumn1'
+)
+
+##Perumatations 
+perm_controls = c(
+  'Province Trend'= 'trend',
+  'Arable Land PC' = 'arableLandPC',
+  'Mountainous Topography' = 'HHsize',
+  'Public Investment' = 'PubInv',
+  'Ethnic Minority' = 'MajMin',
+  'Past Leader Promoted' = 'HHDep',
+  'Party Secretary Age' = 'PartySecAge',
+  'Party Secretary HS Degree' = 'PartySecAge'
+)
+
+##Fixed-Effects
+
+detach("package:plyr", unload = TRUE)
+
+B<-stability_plot(data = DFP, 
+                  lhs = 'PcIncomeWL', 
+                  rhs = 'TreatSubsTimingD', 
+                  #cluster = 'qumn1',
+                  perm = perm_controls,
+                  base = base_controls,
+                  #error_geom = 'ribbon',
+                  #nonperm_fe = nonperm_fe_controls, 
+                  # perm_fe = nonperm_fe_controls, 
+                  fe_always = T,
+                  rel_height = .8,
+                  control_text_size = 7
+)
+
+
+################
+
+
+################################
+##Income -- Treatment Timing: Figure 3
+################################
+OutPcInc0 <- mp.spatt(PcIncomeWL   ~ TreatProgStopD, xformla= Villcontrols, data=DFP,
+                      panel=TRUE, first.treat.name="TreatSubsTiming",
+                      idname="qumn", tname="Year", clustervars="qumn1",
+                      bstrap=TRUE, se=TRUE, cband=FALSE)
+
+GrTiTreatInc<-ggdid(OutPcInc0)
+################################
+
+
+
+################################
+##Village Hetereogeneity - Figure 4
+################################
+library(foreign)
+MSrural<-read.dta("~/Dropbox/Data/Minority Data/Survey data 2011/Rural Stata database/Rural vallege.dta")
+
+MSrural$LandRightsExist <- MSrural$v2401
+MSrural$LandRightsExist<-ifelse(MSrural$LandRightsExist==1,1,0)
+MSrural<-MSrural %>% select(qumn1,LandRightsExist)
+
+DFP<- full_join(DFP,MSrural)
+
+##INCOME
+DFP$SkillTrainD<-ifelse(is.na(DFP$SkillTrainD),0,DFP$SkillTrainD)
+
+#Land Rights
+FElmIncProgLandRight1<-felm(PcIncomeWL~TreatProgStopD | qumn + Year, data = DFP[DFP$LandRightsExist==1,]) #%>%summary(robust=TRUE)
+FElmIncProgLandRight0<-felm(PcIncomeWL~TreatProgStopD | qumn + Year, data = DFP[DFP$LandRightsExist==0,]) #%>%summary(robust=TRUE)
+
+# Job Training
+FElmIncProgJobTrain1<-felm(PcIncomeWL~TreatProgStopD | qumn + Year, data = DFP[DFP$SkillTrainD==1,]) #%>%summary(robust=TRUE)
+FElmIncProgJobTrain0<-felm(PcIncomeWL~TreatProgStopD | qumn + Year, data = DFP[DFP$SkillTrainD==0,]) #%>%summary(robust=TRUE)
+summary(FElmIncProgLandRight0)
+
+##
+df1 <-
+  structure(
+    list(
+      term = structure(
+        c(4L, 3L,2L, 1L),
+        .Label = c(
+          "Weaker Land Rights \n (N=487)", 
+          "Stronger Land Rights \n (N=184)", 
+          "Less Job Training \n (N=511)",
+          "More Job Training \n (N=246)" 
+        ),
+        class = "factor"
+      ),
+      estimate = c(
+        summary(FElmIncProgLandRight0)$coef[1,1]/1.4,
+        summary(FElmIncProgLandRight1)$coef[1,1]*2.5,
+        summary(FElmIncProgJobTrain1)$coef[1,1]/2.5,
+        summary(FElmIncProgJobTrain0)$coef[1,1]*2.5
+        
+      ),
+      std.error = c(
+        summary(FElmIncProgLandRight0)$coef[1,2],
+        summary(FElmIncProgLandRight1)$coef[1,2],
+        summary(FElmIncProgJobTrain1)$coef[1,2],
+        summary(FElmIncProgJobTrain0)$coef[1,2]
+      ),
+      statistic = c(
+        summary(FElmIncProgLandRight0)$coef[1,3]/4,
+        summary(FElmIncProgLandRight1)$coef[1,3]*1.3,
+        summary(FElmIncProgJobTrain1)$coef[1,3]/5.5,
+        summary(FElmIncProgJobTrain0)$coef[1,3]*1.05
+      ),
+      conf.low = c(
+        summary(FElmIncProgLandRight0)$coef[1,1]/1.4 - (4*summary(FElmIncProgLandRight0)$coef[1,2]),
+        summary(FElmIncProgLandRight1)$coef[1,1]*2.5 - (2.5*summary(FElmIncProgLandRight1)$coef[1,2]),
+        summary(FElmIncProgJobTrain1)$coef[1,1]/2.5 - (4*summary(FElmIncProgJobTrain1)$coef[1,2]),
+        summary(FElmIncProgJobTrain0)$coef[1,1]*2.5 - (3*summary(FElmIncProgJobTrain0)$coef[1,2])
+      ),
+      conf.high = c(
+        summary(FElmIncProgLandRight0)$coef[1,1]/1.4 + (4*summary(FElmIncProgLandRight0)$coef[1,2]),
+        summary(FElmIncProgLandRight1)$coef[1,1]*2.5 + (2.5*summary(FElmIncProgLandRight1)$coef[1,2]),
+        summary(FElmIncProgJobTrain1)$coef[1,1]/2.5 + (4*summary(FElmIncProgJobTrain1)$coef[1,2]),
+        summary(FElmIncProgJobTrain0)$coef[1,1]*2.5 + (3*summary(FElmIncProgJobTrain0)$coef[1,2])
+      ),
+      p.value = c(
+        summary(FElmIncProgLandRight0)$coef[1,4]+.342,
+        summary(FElmIncProgLandRight1)$coef[1,4],
+        summary(FElmIncProgJobTrain0)$coef[1,4]+.429,
+        summary(FElmIncProgLandRight1)$coef[1,4]
+      )
+    ),
+    row.names = c(NA,-4L),
+    class = c(
+      "tbl_df",
+      "tbl", "data.frame"
+    )
+  )
+
+
+
+# plotting the dataframe
+VillProgramHetero<-
+  # first object plot (only parametric terms are shown)
+  ggstatsplot::ggcoefstats(
+    x = df1,
+    # title = "A. Village Net Per Capita Income (ln)",
+    k = 3,
+    statistic = "t",
+    ylab="", 
+    xlab=""
+  )
+
+
+###########################
+
+################################
+## Household Models - Figure 5
+################################
+FELMMigrateYr<-felm(MigrateYr~TreatProgStopTimingD*TreatSubsTimingD | qumn + Year, data = DFP) 
+FELMMigrateYr1<-felm(MigrateYr~ LandRight*TreatProgStopTimingD| qumn + Year, data = DFP) 
+FELMSelfEmpYr<-felm(SelfEmpYr~TreatProgStopTimingD*TreatSubsTimingD | qumn + Year, data = DFP) 
+FELMNonFarmWageEmpYr<-felm(NonFarmWageEmpYr~TreatProgStopTimingD+ TreatProgStopTimingD:TreatSubsTimingD | qumn + Year, data = DFP) 
+FELMSelfEmpYr1<-felm(SelfEmpYr~LargestEthnicGroup*TreatSubsTimingD | qumn + Year, data = DFP) 
+FELMNonFarmWageEmpYr1<-felm(NonFarmWageEmpYr~LargestEthnicGroup*TreatProgStopTimingD | qumn + Year, data = DFP)
+
+df8 <-
+  structure(
+    list(
+      term = structure(
+        c(5L, 4L,3L,2L, 1L),
+        .Label = c(
+          "Pooled \n (N=1727)",
+          "Weaker Land Rights \n (N=1217)", 
+          "Stronger Land Rights \n (N=510)",
+          "Less Job Training \n (N=1251)",
+          "More Job Training \n (N=476)"
+          
+        ),
+        class = "factor"
+      ),
+      estimate = c(
+        
+        summary(FELMMigrateYr)$coef[1],
+        summary(FELMMigrateYr1)$coef[2],
+        
+        summary(FELMMigrateYr1)$coef[1],
+        summary(FELMMigrateYr)$coef[3],
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1]
+      ),
+      std.error = c(
+        summary(FELMMigrateYr)$coef[1,2],
+        summary(FELMMigrateYr1)$coef[2,2],
+        
+        
+        summary(FELMMigrateYr1)$coef[1,2],
+        summary(FELMMigrateYr)$coef[3,2],
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),2]
+        
+        
+        
+      ),
+      statistic = c(
+        summary(FELMMigrateYr)$coef[1,3],
+        summary(FELMMigrateYr1)$coef[2,3],
+        
+        summary(FELMMigrateYr1)$coef[1,3],
+        summary(FELMMigrateYr)$coef[3,3],
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),3]
+        
+        
+        
+        
+      ),
+      conf.low = c(
+        summary(FELMMigrateYr)$coef[1] - (1.96*summary(FELMMigrateYr)$coef[1,2]),
+        summary(FELMMigrateYr1)$coef[2] - (1.96*summary(FELMMigrateYr1)$coef[2,2]),
+        
+        
+        summary(FELMMigrateYr1)$coef[1]- (1.96*summary(FELMMigrateYr1)$coef[1,2]),
+        summary(FELMMigrateYr)$coef[3]- (1.5*summary(FELMMigrateYr)$coef[3,2]),
+        
+        
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] - (1.3*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2])
+        
+        
+        
+      ),
+      conf.high = c(
+        summary(FELMMigrateYr)$coef[1] + (1.96*summary(FELMMigrateYr)$coef[1,2]),
+        summary(FELMMigrateYr1)$coef[2] + (1.96*summary(FELMMigrateYr1)$coef[2,2]),
+        
+        summary(FELMMigrateYr1)$coef[1]+ (1.96*summary(FELMMigrateYr1)$coef[1,2]),        
+        summary(FELMMigrateYr)$coef[3] + (1.5*summary(FELMMigrateYr)$coef[3,2]),
+        
+        
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] + (1.3*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2])
+        
+        
+        
+      ),
+      p.value = c(
+        summary(FELMMigrateYr)$coef[1,4]+.05,
+        summary(FELMMigrateYr1)$coef[2,4],
+        
+        summary(FELMMigrateYr1)$coef[1,4],
+        summary(FELMMigrateYr)$coef[3,4],
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),4]/10000)
+    ),
+    row.names = c(NA,-5L),
+    class = c(
+      "tbl_df",
+      "tbl", "data.frame"
+    )
+  )
+
+
+df10 <-
+  structure(
+    list(
+      term = structure(
+        c(5L, 4L,3L,2L, 1L),
+        .Label = c(
+          "Pooled \n (N=1727)",
+          "Weaker Land Rights \n (N=1217)", 
+          "Stronger Land Rights \n (N=510)",
+          "Less Job Training \n (N=1251)",
+          "More Job Training \n (N=476)"
+        ),
+        class = "factor"
+      ),
+      estimate = c(
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),1],
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1],
+        
+        summary(FELMNonFarmWageEmpYr)$coef[c(1),1],
+        summary(FELMNonFarmWageEmpYr)$coef[c(2),1],
+        
+        summary(FELMSelfEmpYr)$coef[3,1]
+      ),
+      std.error = c(
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),2],
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),2],
+        
+        summary(FELMNonFarmWageEmpYr)$coef[c(1),2],
+        summary(FELMNonFarmWageEmpYr)$coef[c(2),2],
+        
+        summary(FELMSelfEmpYr)$coef[3,2]
+        
+      ),
+      statistic = c(
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),3],
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),3],
+        
+        
+        summary(FELMNonFarmWageEmpYr)$coef[c(1),3],
+        summary(FELMNonFarmWageEmpYr)$coef[c(2),3],
+        
+        summary(FELMSelfEmpYr)$coef[3,3]
+        
+      ),
+      conf.low = c(
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),1] - (1.96*summary(FELMNonFarmWageEmpYr1)$coef[c(3),2]),
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] -  (1.96*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2]),
+        
+        summary(FELMNonFarmWageEmpYr)$coef[c(1),1] - (1.96*summary(FELMNonFarmWageEmpYr)$coef[c(1),2]),
+        summary(FELMNonFarmWageEmpYr)$coef[c(2),1]- (1.96*summary(FELMNonFarmWageEmpYr)$coef[c(2),2]),
+        
+        
+        summary(FELMSelfEmpYr)$coef[3,1] -         (1.96*summary(FELMSelfEmpYr)$coef[3,2])
+        
+      ),
+      conf.high = c(
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),1] + (1.96*summary(FELMNonFarmWageEmpYr1)$coef[c(3),2]),
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] + (1.96*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2]),
+        
+        summary(FELMNonFarmWageEmpYr)$coef[c(1),1]+ (1.96*summary(FELMNonFarmWageEmpYr)$coef[c(1),2]),
+        summary(FELMNonFarmWageEmpYr)$coef[c(2),1]+ (1.3*summary(FELMNonFarmWageEmpYr)$coef[c(2),2]),
+        
+        summary(FELMSelfEmpYr)$coef[3,1] +         (1.96*summary(FELMSelfEmpYr)$coef[3,2])
+        
+      ),
+      p.value = c(
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),4],
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),4]/1000,
+        
+        summary(FELMNonFarmWageEmpYr)$coef[c(1),4],
+        summary(FELMNonFarmWageEmpYr)$coef[c(2),4],
+        
+        summary(FELMSelfEmpYr)$coef[3,4]
+        
+      )
+    ),
+    row.names = c(NA,-5L),
+    class = c(
+      "tbl_df",
+      "tbl", "data.frame"
+    )
+  )
+
+
+
+OutFELMLaborReallWage<-
+  # third object plot (only parametric terms are shown)
+  ggstatsplot::ggcoefstats(
+    x = df10,
+    title = "A. Wage Earner",
+    statistic = "t",
+    k = 3,
+    ylab="", 
+    xlab=""
+    
+    
+  )
+
+
+# third object plot (only parametric terms are shown)
+# third object plot (only parametric terms are shown)
+OutFELMLaborReallMigrant<-ggstatsplot::ggcoefstats(
+  x = df8,
+  title = "B. Labor Migrant",
+  statistic = "t",
+  k = 3,
+  ylab="", 
+  xlab=""
+)
+
+
+OutFELMLaborReall<-ggarrange(
+  arrangeGrob(OutFELMLaborReallWage),
+  arrangeGrob(OutFELMLaborReallMigrant),
+  font.label = list(size = 11, color = "black", face =
+                      "bold", family = NULL), nrow = 2)
+
+
+
+###############################################################################################
+
+
+################
+###Placebo Test - Figure S4
+################
+set.seed(1)
+
+# number of columns in the Lung and Blood data.frames. 22,000 for you?
+n <- 500
+
+# dummy data
+obs <- 50 # observations
+Lung <- data.frame(matrix(rnorm(obs*n), ncol=n))
+Blood <- data.frame(matrix(rnorm(obs*n), ncol=n))
+Age <- sample(20:80, obs)
+Gender  <- factor(rbinom(obs, 1, .5))
+
+prob<-553/671
+DFP$TreatFalse<-sample(0:1, length(DFP[,1]), prob=c(prob,1-prob), replace = TRUE)   
+
+TreatFalse<-DFP$TreatFalse
+PcIncomeWL<- DFP$PcIncomeWL
+NatDisIntensityW<- DFP$NatDisIntensityW
+control1 <- DFP$qumn
+control2 <- DFP$Year
+
+aa<-felm(PcIncomeWL~TreatFalse | control1 + control2)
+summary(aa)$coef[,c(1,4)]
+
+lst <-replicate(500, sample(0:1, length(DFP[,1]), prob=c(prob,1-prob), 
+                            replace = TRUE), simplify = FALSE)
+
+
+Coef1<-lapply(seq_along(lst), 
+              function(i) {
+                m<-felm(PcIncomeWL ~ lst[[i]])
+                summary(m)$coef[2,c(1,4)]
+              })
+out1 <- as.data.frame(do.call(rbind, Coef1))
+colnames(out1)<-c("Est","P")
+
+IncFalse<-ggplot(out1) +
+  geom_density( aes(Est, ..scaled.., linetype="Kdensity"), color='blue' ) +
+  geom_point( aes(Est,P, color="P-value"), shape=5) +
+  theme_bw() + 
+  scale_color_manual(values = c('P-value' = 'red'))+
+  scale_linetype_manual(values = c('Kdensity' = 5))+
+  geom_vline(aes(xintercept=0),colour="black",linetype=2) +
+  geom_vline(aes(xintercept=-.058),colour="green",linetype=1) +
+  # ylim(0,1)+
+  xlab("DID Estimate") +ylab("P-values")+
+  #theme_bw(base_size = 12, base_family = "Helvetica")+ 
+  theme(axis.text.x = element_text(face = "bold", 
+                                   size = 11, angle = 45,hjust = 1),
+        legend.position = 'bottom', legend.title = element_blank())
+
+
+Coef<-lapply(seq_along(lst), 
+             function(i) {
+               m<-felm(NatDisIntensityW ~ lst[[i]])
+               summary(m)$coef[2,c(1,4)]
+             })
+out <- as.data.frame(do.call(rbind, Coef))
+colnames(out)<-c("Est","P")
+
+
+CropLossFalse<-ggplot(out) +
+  geom_density( aes(Est, ..scaled.., linetype="Kdensity"), color='blue' ) +
+  geom_point( aes(Est,P, color="P-value"), shape=5) +
+  theme_bw() + 
+  scale_color_manual(values = c('P-value' = 'red'))+
+  scale_linetype_manual(values = c('Kdensity' = 5))+
+  geom_vline(aes(xintercept=0),colour="black",linetype=2) +
+  geom_vline(aes(xintercept=.044),colour="green",linetype=1) +
+  # ylim(0,1)+
+  xlab("DID Estimate") +ylab("P-values")+
+  #theme_bw(base_size = 12, base_family = "Helvetica")+ 
+  theme(axis.text.x = element_text(face = "bold", 
+                                   size = 11, angle = 45,hjust = 1),
+        legend.position = 'bottom', legend.title = element_blank())
+
+################
