@@ -707,10 +707,10 @@ df1 <-
         class = "factor"
       ),
       estimate = c(
-        summary(FElmIncProgLandRight0)$coef[1,1]/1.4,
-        summary(FElmIncProgLandRight1)$coef[1,1]*2.5,
-        summary(FElmIncProgJobTrain1)$coef[1,1]/2.5,
-        summary(FElmIncProgJobTrain0)$coef[1,1]*2.5
+        summary(FElmIncProgLandRight0)$coef[1,1],
+        summary(FElmIncProgLandRight1)$coef[1,1],
+        summary(FElmIncProgJobTrain1)$coef[1,1],
+        summary(FElmIncProgJobTrain0)$coef[1,1]
         
       ),
       std.error = c(
@@ -720,27 +720,27 @@ df1 <-
         summary(FElmIncProgJobTrain0)$coef[1,2]
       ),
       statistic = c(
-        summary(FElmIncProgLandRight0)$coef[1,3]/4,
-        summary(FElmIncProgLandRight1)$coef[1,3]*1.3,
-        summary(FElmIncProgJobTrain1)$coef[1,3]/5.5,
-        summary(FElmIncProgJobTrain0)$coef[1,3]*1.05
+        summary(FElmIncProgLandRight0)$coef[1,3],
+        summary(FElmIncProgLandRight1)$coef[1,3],
+        summary(FElmIncProgJobTrain1)$coef[1,3],
+        summary(FElmIncProgJobTrain0)$coef[1,3]
       ),
       conf.low = c(
-        summary(FElmIncProgLandRight0)$coef[1,1]/1.4 - (4*summary(FElmIncProgLandRight0)$coef[1,2]),
-        summary(FElmIncProgLandRight1)$coef[1,1]*2.5 - (2.5*summary(FElmIncProgLandRight1)$coef[1,2]),
-        summary(FElmIncProgJobTrain1)$coef[1,1]/2.5 - (4*summary(FElmIncProgJobTrain1)$coef[1,2]),
-        summary(FElmIncProgJobTrain0)$coef[1,1]*2.5 - (3*summary(FElmIncProgJobTrain0)$coef[1,2])
+        summary(FElmIncProgLandRight0)$coef[1,1] - (1.96*summary(FElmIncProgLandRight0)$coef[1,2]),
+        summary(FElmIncProgLandRight1)$coef[1,1] - (1.96*summary(FElmIncProgLandRight1)$coef[1,2]),
+        summary(FElmIncProgJobTrain1)$coef[1,1] - (1.96*summary(FElmIncProgJobTrain1)$coef[1,2]),
+        summary(FElmIncProgJobTrain0)$coef[1,1] - (1.96*summary(FElmIncProgJobTrain0)$coef[1,2])
       ),
       conf.high = c(
-        summary(FElmIncProgLandRight0)$coef[1,1]/1.4 + (4*summary(FElmIncProgLandRight0)$coef[1,2]),
-        summary(FElmIncProgLandRight1)$coef[1,1]*2.5 + (2.5*summary(FElmIncProgLandRight1)$coef[1,2]),
-        summary(FElmIncProgJobTrain1)$coef[1,1]/2.5 + (4*summary(FElmIncProgJobTrain1)$coef[1,2]),
-        summary(FElmIncProgJobTrain0)$coef[1,1]*2.5 + (3*summary(FElmIncProgJobTrain0)$coef[1,2])
+        summary(FElmIncProgLandRight0)$coef[1,1] + (1.96*summary(FElmIncProgLandRight0)$coef[1,2]),
+        summary(FElmIncProgLandRight1)$coef[1,1] + (1.96*summary(FElmIncProgLandRight1)$coef[1,2]),
+        summary(FElmIncProgJobTrain1)$coef[1,1] (1.96*summary(FElmIncProgJobTrain1)$coef[1,2]),
+        summary(FElmIncProgJobTrain0)$coef[1,1] + (1.96*summary(FElmIncProgJobTrain0)$coef[1,2])
       ),
       p.value = c(
-        summary(FElmIncProgLandRight0)$coef[1,4]+.342,
+        summary(FElmIncProgLandRight0)$coef[1,4],
         summary(FElmIncProgLandRight1)$coef[1,4],
-        summary(FElmIncProgJobTrain0)$coef[1,4]+.429,
+        summary(FElmIncProgJobTrain0)$coef[1,4],
         summary(FElmIncProgLandRight1)$coef[1,4]
       )
     ),
@@ -832,10 +832,10 @@ df8 <-
         
         
         summary(FELMMigrateYr1)$coef[1]- (1.96*summary(FELMMigrateYr1)$coef[1,2]),
-        summary(FELMMigrateYr)$coef[3]- (1.5*summary(FELMMigrateYr)$coef[3,2]),
+        summary(FELMMigrateYr)$coef[3]- (1.96*5*summary(FELMMigrateYr)$coef[3,2]),
         
         
-        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] - (1.3*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2])
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] - (1.96*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2])
         
         
         
@@ -845,21 +845,21 @@ df8 <-
         summary(FELMMigrateYr1)$coef[2] + (1.96*summary(FELMMigrateYr1)$coef[2,2]),
         
         summary(FELMMigrateYr1)$coef[1]+ (1.96*summary(FELMMigrateYr1)$coef[1,2]),        
-        summary(FELMMigrateYr)$coef[3] + (1.5*summary(FELMMigrateYr)$coef[3,2]),
+        summary(FELMMigrateYr)$coef[3] + (1.96*summary(FELMMigrateYr)$coef[3,2]),
         
         
-        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] + (1.3*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2])
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] + (1.96*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2])
         
         
         
       ),
       p.value = c(
-        summary(FELMMigrateYr)$coef[1,4]+.05,
+        summary(FELMMigrateYr)$coef[1,4],
         summary(FELMMigrateYr1)$coef[2,4],
         
         summary(FELMMigrateYr1)$coef[1,4],
         summary(FELMMigrateYr)$coef[3,4],
-        summary(FELMNonFarmWageEmpYr1)$coef[c(3),4]/10000)
+        summary(FELMNonFarmWageEmpYr1)$coef[c(3),4])
     ),
     row.names = c(NA,-5L),
     class = c(
@@ -929,14 +929,14 @@ df10 <-
         summary(FELMNonFarmWageEmpYr1)$coef[c(2),1] + (1.96*summary(FELMNonFarmWageEmpYr1)$coef[c(2),2]),
         
         summary(FELMNonFarmWageEmpYr)$coef[c(1),1]+ (1.96*summary(FELMNonFarmWageEmpYr)$coef[c(1),2]),
-        summary(FELMNonFarmWageEmpYr)$coef[c(2),1]+ (1.3*summary(FELMNonFarmWageEmpYr)$coef[c(2),2]),
+        summary(FELMNonFarmWageEmpYr)$coef[c(2),1]+ (1.96**summary(FELMNonFarmWageEmpYr)$coef[c(2),2]),
         
         summary(FELMSelfEmpYr)$coef[3,1] +         (1.96*summary(FELMSelfEmpYr)$coef[3,2])
         
       ),
       p.value = c(
         summary(FELMNonFarmWageEmpYr1)$coef[c(3),4],
-        summary(FELMNonFarmWageEmpYr1)$coef[c(2),4]/1000,
+        summary(FELMNonFarmWageEmpYr1)$coef[c(2),4],
         
         summary(FELMNonFarmWageEmpYr)$coef[c(1),4],
         summary(FELMNonFarmWageEmpYr)$coef[c(2),4],
@@ -1054,20 +1054,5 @@ Coef<-lapply(seq_along(lst),
 out <- as.data.frame(do.call(rbind, Coef))
 colnames(out)<-c("Est","P")
 
-
-CropLossFalse<-ggplot(out) +
-  geom_density( aes(Est, ..scaled.., linetype="Kdensity"), color='blue' ) +
-  geom_point( aes(Est,P, color="P-value"), shape=5) +
-  theme_bw() + 
-  scale_color_manual(values = c('P-value' = 'red'))+
-  scale_linetype_manual(values = c('Kdensity' = 5))+
-  geom_vline(aes(xintercept=0),colour="black",linetype=2) +
-  geom_vline(aes(xintercept=.044),colour="green",linetype=1) +
-  # ylim(0,1)+
-  xlab("DID Estimate") +ylab("P-values")+
-  #theme_bw(base_size = 12, base_family = "Helvetica")+ 
-  theme(axis.text.x = element_text(face = "bold", 
-                                   size = 11, angle = 45,hjust = 1),
-        legend.position = 'bottom', legend.title = element_blank())
 
 ################
